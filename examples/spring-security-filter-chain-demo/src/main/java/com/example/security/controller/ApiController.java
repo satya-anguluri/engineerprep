@@ -1,45 +1,61 @@
 package com.example.security.controller;
 
-import com.example.security.service.GreetingService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * Protected API endpoints.
+ * Handled by the API SecurityFilterChain (@Order 2) — JWT required.
  *
- * These controllers are ONLY reached if the filter chain allowed the request through.
- * By the time we are here:
- *  - JwtAuthenticationFilter has already validated the token and populated SecurityContextHolder
- *  - AuthorizationFilter has already verified the user has ROLE_USER
- *
- * If either check failed, ExceptionTranslationFilter would have returned 401/403
- * and this code would never execute.
+ * By the time execution reaches here:
+ *   1. DelegatingFilterProxy → FilterChainProxy selected this chain.
+ *   2. FilterChainLoggingFilter logged the request.
+ *   3. JwtAuthFilter extracted the token and populated SecurityContextHolder.
+ *   4. AuthorizationFilter checked the required authority.
+ *   5. ExceptionTranslationFilter is waiting to catch any AccessDeniedException.
  */
 @RestController
 @RequestMapping("/api")
 public class ApiController {
 
-    private static final Logger log = LoggerFactory.getLogger(ApiController.class);
+    /**
+     * Accessible to any authenticated user (ROLE_USER or ROLE_ADMIN).
+     * Requires header:  Authorization: Bearer demo-token-for-user
+     *              or:  Authorization: Bearer demo-token-for-admin
+     */
+    @GetMapping("/profile")
+    public Map<String, Object> profile() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
-    private final GreetingService greetingService;
+        List<String> roles = auth.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .toList();
 
-    public ApiController(GreetingService greetingService) {
-        this.greetingService = greetingService;
+        return Map.of(
+            "user",    auth.getName(),
+            "roles",   roles,
+            "message", "Authenticated via JWT filter chain (@Order 2)"
+        );
     }
 
     /**
-     * GET /api/hello — requires ROLE_USER (enforced by AuthorizationFilter before we get here).
-     * Calls GreetingService which reads the principal from SecurityContextHolder.
+     * Accessible only to ROLE_ADMIN.
+     * User token → 403 (AuthorizationFilter throws AccessDeniedException,
+     *                   ExceptionTranslationFilter converts it to 403).
+     * Admin token → 200.
      */
-    @GetMapping("/hello")
-    public Map<String, String> hello() {
-        log.info("[ApiController] /api/hello reached — filter chain passed the request through");
-        String message = greetingService.buildGreeting();
-        return Map.of("message", message);
+    @GetMapping("/admin-only")
+    public Map<String, String> adminOnly() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return Map.of(
+            "message", "You have ROLE_ADMIN — access granted",
+            "user",    auth.getName()
+        );
     }
 }

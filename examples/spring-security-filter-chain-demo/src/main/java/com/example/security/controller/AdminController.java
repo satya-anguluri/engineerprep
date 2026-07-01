@@ -1,9 +1,7 @@
 package com.example.security.controller;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,31 +9,24 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Map;
 
 /**
- * Admin-only endpoint.
+ * Handled by the ADMIN SecurityFilterChain (@Order 3) — HTTP Basic required,
+ * ROLE_ADMIN required.
  *
- * Requires ROLE_ADMIN — configured in SecurityConfig:
- *   .requestMatchers("/api/admin").hasRole("ADMIN")
- *
- * If a ROLE_USER (but not ROLE_ADMIN) user hits this endpoint:
- *   - AuthorizationFilter throws AccessDeniedException
- *   - ExceptionTranslationFilter catches it → 403 Forbidden
- *   - This controller method is NEVER invoked
+ * Try:
+ *   curl -u admin:adminpass http://localhost:8080/admin/dashboard  → 200
+ *   curl -u user:password   http://localhost:8080/admin/dashboard  → 403
+ *   curl                    http://localhost:8080/admin/dashboard  → 401
  */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/admin")
 public class AdminController {
 
-    private static final Logger log = LoggerFactory.getLogger(AdminController.class);
-
-    @GetMapping("/admin")
-    public Map<String, String> adminArea(@AuthenticationPrincipal Object principal) {
-        // @AuthenticationPrincipal is a convenience annotation that reads
-        // SecurityContextHolder.getContext().getAuthentication().getPrincipal()
-        String name = (principal instanceof org.springframework.security.core.Authentication auth)
-            ? auth.getName()
-            : String.valueOf(principal);
-
-        log.info("[AdminController] /api/admin reached by '{}'", name);
-        return Map.of("message", "Welcome to the admin area, " + name);
+    @GetMapping("/dashboard")
+    public Map<String, String> dashboard() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return Map.of(
+            "message", "Welcome to admin dashboard (session-based, @Order 3 chain)",
+            "user",    auth.getName()
+        );
     }
 }
